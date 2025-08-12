@@ -6,6 +6,10 @@ on:
 jobs:
   docker:
     runs-on: ubuntu-latest
+    permissions:                     # <- ajoute ces 2 lignes
+      contents: read
+      packages: write
+
     steps:
       - uses: actions/checkout@v4
       - name: Login to GHCR
