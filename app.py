@@ -30,26 +30,24 @@ def get_admin_token():
     return token
 
 def list_all_users():
-    """Retourne la liste des comptes sous forme [{username, token}]."""
+    """Retourne la liste [{username, token}] : admin + amis."""
     users = [{"username": os.getenv("PLEX_USERNAME"),
               "token": get_admin_token()}]
 
-    # Lecture JSON de PLEX_EXTRA_USERS
-    extra_json = os.getenv("PLEX_EXTRA_USERS", "[]")
-    try:
-        extra_users = json.loads(extra_json)
-    except json.JSONDecodeError:
-        logging.error("PLEX_EXTRA_USERS n’est pas un JSON valide : %s", extra_json)
-        extra_users = []
-
-    for user in extra_users:
+    # Lecture des variables PLEX_EXTRA_USERNAME_X et PLEX_EXTRA_PASSWORD_X
+    idx = 1
+    while True:
+        username = os.getenv(f"PLEX_EXTRA_USERNAME_{idx}")
+        password = os.getenv(f"PLEX_EXTRA_PASSWORD_{idx}")
+        if not username or not password:
+            break
         try:
-            logging.info("Connexion de l’ami %s…", user["username"])
-            acc = MyPlexAccount(user["username"], user["password"])
-            users.append({"username": user["username"],
-                          "token": acc.authenticationToken})
+            logging.info("Connexion de l’ami %s…", username)
+            acc = MyPlexAccount(username, password)
+            users.append({"username": username, "token": acc.authenticationToken})
         except Exception as e:
-            logging.error("Impossible de se connecter avec %s : %s", user["username"], e)
+            logging.error("Impossible de se connecter avec %s : %s", username, e)
+        idx += 1
 
     logging.info("%d utilisateur(s) seront traités.", len(users))
     return users
