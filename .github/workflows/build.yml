@@ -6,7 +6,7 @@ on:
 jobs:
   docker:
     runs-on: ubuntu-latest
-    permissions:                     # <- ajoute ces 2 lignes
+    permissions:
       contents: read
       packages: write
 
