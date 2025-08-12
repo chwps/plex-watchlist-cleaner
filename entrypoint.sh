@@ -1,17 +1,45 @@
 #!/bin/bash
-# Assure que toutes les variables d’environnement soient visibles par cron
-printenv | grep -v "no_proxy" >> /etc/environment
+set -x   # ← active le mode debug (chaque commande est affichée avant exécution)
 
-# CRON par défaut toutes les heures
+echo "[DEBUG] Début de entrypoint.sh"
+echo "[DEBUG] UID=$(id -u) GID=$(id -g)"
+echo "[DEBUG] PATH=$PATH"
+
+# Vérifie quels binaires existent
+which crontab || echo "[DEBUG] crontab introuvable"
+which crond   || echo "[DEBUG] crond   introuvable"
+which cron    || echo "[DEBUG] cron    introuvable"
+which python3 || echo "[DEBUG] python3 introuvable"
+which /usr/local/bin/python || echo "[DEBUG] /usr/local/bin/python introuvable"
+
+# Affiche toutes les vars d’env
+env | grep -v no_proxy | tee /tmp/env_dump
+printenv >> /etc/environment
+
 CRON_SCHEDULE=${CRON_SCHEDULE:-0 */1 * * *}
+echo "[DEBUG] CRON_SCHEDULE=$CRON_SCHEDULE"
 
-# On construit la ligne cron :
-#   – on « source » /etc/environment pour retrouver toutes les vars
-#   – on redirige stdout/stderr vers le même flux que PID 1
-CRON_CMD="$CRON_SCHEDULE . /etc/environment; /usr/local/bin/python /app/app.py >> /proc/1/fd/1 2>&1"
+# Création du fichier cron temporaire
+CRON_FILE=/tmp/crontab
+echo "[DEBUG] Écriture cron dans $CRON_FILE"
+echo "$CRON_SCHEDULE . /etc/environment; /usr/local/bin/python /app/app.py >> /proc/1/fd/1 2>&1" > "$CRON_FILE"
+cat "$CRON_FILE"
 
-# Injection de la tâche (création ou remplacement)
-(crontab -l 2>/dev/null; echo "$CRON_CMD") | crontab -
+# Installation dans crontab
+echo "[DEBUG] Chargement crontab"
+crontab "$CRON_FILE" || echo "[DEBUG] crontab a échoué avec code $?"
 
-echo "[ENTRYPOINT] Starting cron in foreground..."
-cron -f
+# Liste la crontab actuelle
+crontab -l || echo "[DEBUG] crontab -l a échoué"
+
+# Choix de l’exécutable cron
+if command -v cron >/dev/null 2>&1; then
+    echo "[DEBUG] Lancement de cron -f"
+    exec cron -f
+elif command -v crond >/dev/null 2>&1; then
+    echo "[DEBUG] Lancement de crond -f"
+    exec crond -f
+else
+    echo "[DEBUG] Ni cron ni crond trouvés — plantage inévitable"
+    exit 127
+fi
