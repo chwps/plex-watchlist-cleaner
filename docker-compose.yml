@@ -1,6 +1,6 @@
 version: "3.9"
 services:
-  watchlist-cleaner:
+  plex-watchlist-cleaner:
     image: ghcr.io/chwps/plex-watchlist-cleaner:latest
     container_name: plex-watchlist-cleaner
     restart: unless-stopped
