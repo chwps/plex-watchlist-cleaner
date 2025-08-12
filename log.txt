@@ -1,0 +1,25 @@
+webhook-1  |  * Serving Flask app 'webhook'
+webhook-1  |  * Debug mode: on
+webhook-1  | 2025-08-11 18:23:10,142 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+webhook-1  |  * Running on all addresses (0.0.0.0)
+webhook-1  |  * Running on http://127.0.0.1:5000
+webhook-1  |  * Running on http://172.16.22.2:5000
+webhook-1  | 2025-08-11 18:23:10,142 - INFO - [33mPress CTRL+C to quit[0m
+webhook-1  | 2025-08-11 18:23:10,143 - INFO -  * Restarting with stat
+webhook-1  | 2025-08-11 18:23:10,271 - WARNING -  * Debugger is active!
+webhook-1  | 2025-08-11 18:23:10,272 - INFO -  * Debugger PIN: 422-269-561
+webhook-1  |  * Serving Flask app 'webhook'
+webhook-1  |  * Debug mode: on
+webhook-1  | 2025-08-11 18:23:34,047 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+webhook-1  |  * Running on all addresses (0.0.0.0)
+webhook-1  |  * Running on http://127.0.0.1:5000
+webhook-1  |  * Running on http://172.16.22.2:5000
+webhook-1  | 2025-08-11 18:23:34,047 - INFO - [33mPress CTRL+C to quit[0m
+webhook-1  | 2025-08-11 18:23:34,047 - INFO -  * Restarting with stat
+webhook-1  | 2025-08-11 18:23:34,176 - WARNING -  * Debugger is active!
+webhook-1  | 2025-08-11 18:23:34,176 - INFO -  * Debugger PIN: 422-269-561
+webhook-1  | 2025-08-11 18:23:42,345 - INFO - Webhook reçu
+webhook-1  | 2025-08-11 18:23:42,345 - INFO - Payload extraite : {'notification_type': 'media_removed', 'plexId': '/library/metadata/5d776889ebdf2200209c1bdb'}
+webhook-1  | 2025-08-11 18:23:43,062 - INFO - Non trouvé pour Tristan.Brn
+webhook-1  | 2025-08-11 18:23:43,738 - INFO - Non trouvé pour ArtVicToRy
+webhook-1  | 2025-08-11 18:23:43,739 - INFO - 192.168.1.22 - - [11/Aug/2025 18:23:43] "[33mPOST /webhook HTTP/1.1[0m" 404 -
