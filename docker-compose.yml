@@ -9,7 +9,11 @@ services:
       PLEX_USERNAME: "admin"
       PLEX_PASSWORD: "adminpass"
       COLLECTIONS: "Collection1,Collection2,Collection3" #No collection limit
-      PLEX_EXTRA_USERS: '[{"username":"usernameFriend1","password":"passFriend1"},{"username":"usernameFriend2","password":"passFriend2"}]' #No user limit
+      PLEX_EXTRA_USERNAME_1: usernameFriend1
+      PLEX_EXTRA_PASSWORD_1: passFriend1
+      PLEX_EXTRA_USERNAME_2: usernameFriend2
+      PLEX_EXTRA_PASSWORD_2: passFriend2
+      #No user limit
       CRON_SCHEDULE: "0 */1 * * *"   # every hour
     volumes:
       - ./data:/data
