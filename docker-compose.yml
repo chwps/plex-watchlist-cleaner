@@ -8,8 +8,8 @@ services:
       PLEX_URL: "http://localhost:32400"
       PLEX_USERNAME: "admin"
       PLEX_PASSWORD: "adminpass"
-      COLLECTIONS: "Collection1,Collection2,Collection3"
-      PLEX_EXTRA_USERS: "ami1:pass1,ami2:pass2"
+      COLLECTIONS: "Collection1,Collection2,Collection3" #No collection limit
+      PLEX_EXTRA_USERS: "usernameFriend1:passFriend1,usernameFriend2:passFriend2" #No user limit
       CRON_SCHEDULE: "0 */1 * * *"   # every hour
     volumes:
       - ./data:/data
