@@ -4,7 +4,8 @@ Remove media from Plex watchlist when a media is added to certain collections. W
 This little script lets you monitor one or multiple collections in plex, when media are added to these collections it will be automatically removed from the watchlist of all the users you provided.
 
 It was developed in addition to the use of maintainerr in mind. 
-For example if you want to delete media with rules in maintainerr, maintainerr will put them in "Leaving soon", but it cannot remove these media from the watchlist so you need to use list exclusions if you don't want them to be downloaded again. This script will automatically remove the media in "Leaving soon" from the watchlist of all users so you don't need to use list exclusions for them not to be downloaded again.
+For example : if you want to delete media with rules in maintainerr, maintainerr will put them in "Leaving soon", but it cannot remove these media from the watchlist so you need to use list exclusions if you don't want them to be downloaded again. This script will automatically remove the media in "Leaving soon" from the watchlist of all users so you don't need to use list exclusions for them not to be downloaded again.
+
 Checks for new media added to collections automatically.
 
 ### Requirements : 
