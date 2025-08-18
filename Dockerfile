@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 # Installer cron + busybox (léger)
 RUN apt-get update && \
-    apt-get install -y git cron busybox && \
+    apt-get install -y cron busybox && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
