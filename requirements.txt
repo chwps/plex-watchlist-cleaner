@@ -1,2 +1,2 @@
-git+https://github.com/pkkid/python-plexapi.git@develop#egg=plexapi
+git+https://github.com/pkkid/python-plexapi.git@master#egg=plexapi
 requests>=2.31.0
