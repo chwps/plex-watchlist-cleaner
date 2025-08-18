@@ -1,2 +1,2 @@
-git+https://github.com/pkkid/python-plexapi.git@master#egg=plexapi
+plexapi>=4.17.0
 requests>=2.31.0
