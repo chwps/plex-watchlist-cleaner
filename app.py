@@ -316,8 +316,9 @@ if __name__ == "__main__":
     logging.info("==== Démarrage combiné plex-watchlist-cleaner (web + sync) ====")
     # Ne lance pas sync automatiquement ici — laisse le scheduler (cron) le faire,
     # ou utilise /run_sync pour déclenchement manuel.
-    # Si tu veux lancer une synchro directe au démarrage, décommente la ligne suivante :
-    # sync_collections_once()
+    if os.getenv("RUN_SYNC_AT_STARTUP", "false").lower() in {"1", "true", "yes"}:
+        logging.info("Lancement initial de la synchro car RUN_SYNC_AT_STARTUP est activé.")
+        sync_collections_once()
 
     # Lancer le serveur Flask (il servira la page d'onboarding)
     app.run(host="0.0.0.0", port=5000, debug=False)
