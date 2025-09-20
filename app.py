@@ -3,7 +3,7 @@
 App combinée :
  - web onboarding Plex (PIN / Auth App)
  - stockage tokens utilisateurs (/data/user_tokens.json)
- - si l'utilisateur connecté est l'admin (PLEX_USERNAME), on met aussi à jour /data/plex_token.json
+ - si l'utilisateur connecté est l'admin (ADMIN_USERNAME), on met aussi à jour /data/plex_token.json
  - routine de sync des collections (fonction sync_collections_once)
 """
 
@@ -37,7 +37,7 @@ PLEX_API       = "https://plex.tv/api/v2"
 TOKEN_TTL = int(os.getenv("TOKEN_TTL_HOURS", "24")) * 3600
 
 # Admin account name if you want to auto-detect ("Tristan.Brn")
-ADMIN_USERNAME = os.getenv("PLEX_USERNAME")  # si défini, on considérera ce compte comme admin
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME")  # si défini, on considérera ce compte comme admin
 PLEX_URL = os.getenv("PLEX_URL", "http://localhost:32400")
 COLLECTIONS = [c.strip() for c in os.getenv("COLLECTIONS", "").split(",") if c.strip()]
 
