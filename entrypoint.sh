@@ -22,7 +22,7 @@ echo "[DEBUG] CRON_SCHEDULE=$CRON_SCHEDULE"
 # Création du fichier cron temporaire
 CRON_FILE=/tmp/crontab
 echo "[DEBUG] Écriture cron dans $CRON_FILE"
-echo "$CRON_SCHEDULE . /etc/environment; /usr/local/bin/python /app/app.py >> /proc/1/fd/1 2>&1" > "$CRON_FILE"
+echo "$CRON_SCHEDULE . /etc/environment; /usr/local/bin/python /app/sync.py >> /proc/1/fd/1 2>&1" > "$CRON_FILE"
 cat "$CRON_FILE"
 
 # Installation dans crontab
