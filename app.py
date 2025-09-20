@@ -1,77 +1,35 @@
 #!/usr/bin/env python3
-import os
-import json
-import logging
-import time
-from plexapi.server import PlexServer
+import json, os, logging
 from plexapi.myplex import MyPlexAccount
+from plexapi.server import PlexServer
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO)
 
-STATE_FILE = "/data/plex_watchlist_state.json"
-TOKEN_FILE = "/data/plex_token.json"
-TOKEN_TTL  = 3600 * 24
+TOKENS_FILE = "/data/user_tokens.json"
+STATE_FILE  = "/data/plex_watchlist_state.json"
 
-# ----------  utilitaires ----------
-def get_admin_token():
-    if os.path.exists(TOKEN_FILE):
-        data = json.load(open(TOKEN_FILE))
-        if time.time() - data["ts"] < TOKEN_TTL:
-            logging.info("Token admin récupéré depuis le cache.")
-            return data["token"]
-    logging.info("Connexion Plex admin pour obtenir le token…")
-    acc   = MyPlexAccount(os.getenv("PLEX_USERNAME"), os.getenv("PLEX_PASSWORD"))
-    token = acc.authenticationToken
-    json.dump({"token": token, "ts": time.time()}, open(TOKEN_FILE, "w"))
-    logging.info("Token admin obtenu et mis en cache.")
-    return token
+def load_tokens():
+    return json.load(open(TOKENS_FILE)) if os.path.exists(TOKENS_FILE) else {}
 
 def list_all_users():
-    """Retourne la liste [{username, token}] : admin + amis."""
-    users = [{"username": os.getenv("PLEX_USERNAME"),
-              "token": get_admin_token()}]
+    """Renvoie [{username, token}] sans jamais demander de mot de passe."""
+    tokens = load_tokens()
+    if not tokens:
+        logging.warning("Aucun token utilisateur enregistré.")
+    return [{"username": u, "token": t} for u, t in tokens.items()]
 
-    # Lecture des variables PLEX_EXTRA_USERNAME_X et PLEX_EXTRA_PASSWORD_X
-    idx = 1
-    while True:
-        username = os.getenv(f"PLEX_EXTRA_USERNAME_{idx}")
-        password = os.getenv(f"PLEX_EXTRA_PASSWORD_{idx}")
-        if not username or not password:
-            break
-        try:
-            logging.info("Connexion de l’ami %s…", username)
-            acc = MyPlexAccount(username, password)
-            users.append({"username": username, "token": acc.authenticationToken})
-        except Exception as e:
-            logging.error("Impossible de se connecter avec %s : %s", username, e)
-        idx += 1
-
-    logging.info("%d utilisateur(s) seront traités.", len(users))
-    return users
-
-# ----------  logique ----------
 def remove_batch(guids):
-    if not guids:
-        return
-    logging.info("Début retrait de %d GUID(s) des watchlists…", len(guids))
     for user in list_all_users():
         try:
             acc = MyPlexAccount(token=user["token"])
             watchlist = {item.guid: item for item in acc.watchlist()}
-            removed = 0
             for g in guids:
                 if g in watchlist:
                     acc.removeFromWatchlist(watchlist[g])
-                    removed += 1
-                    logging.info("  • %s retiré pour %s", watchlist[g].title, user["username"])
-            if removed == 0:
-                logging.info("  • Aucun changement pour %s", user["username"])
+                    logging.info("Retiré %s pour %s", watchlist[g].title, user["username"])
         except Exception as e:
             logging.error("Erreur %s : %s", user["username"], e)
-
+            
 def sync_collections_once():
     wanted_collections = [c.strip() for c in os.getenv("COLLECTIONS", "").split(",") if c.strip()]
     if not wanted_collections:
