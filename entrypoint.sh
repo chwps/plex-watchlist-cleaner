@@ -26,13 +26,14 @@ echo "$CRON_SCHEDULE . /etc/environment; /usr/local/bin/python /app/app.py >> /p
 cat "$CRON_FILE"
 
 # Installation dans crontab
-echo "[DEBUG] Chargement crontab"
 crontab "$CRON_FILE" || echo "[DEBUG] crontab a échoué avec code $?"
-
-# Liste la crontab actuelle
 crontab -l || echo "[DEBUG] crontab -l a échoué"
 
-# Choix de l’exécutable cron
+# Lance le serveur web Flask (non bloquant)
+echo "[DEBUG] Lancement du serveur web Flask"
+python /app/web_onboard.py &
+
+# Puis le cron en avant-plan
 if command -v cron >/dev/null 2>&1; then
     echo "[DEBUG] Lancement de cron -f"
     exec cron -f
