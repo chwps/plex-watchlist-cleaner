@@ -4,7 +4,6 @@ import json
 import secrets
 from urllib.parse import urlencode
 from flask import Flask, request, render_template_string
-from plexapi.myplex import MyPlexAccount
 
 app = Flask(__name__)
 
@@ -13,7 +12,6 @@ app = Flask(__name__)
 # ------------------------------------------------------------------
 TOKENS_FILE   = "/data/user_tokens.json"
 CLIENT_ID     = "plex-watchlist-cleaner"
-REDIRECT_URI  = "http://0.0.0.0:5000/callback"
 SCOPE         = "offline_access openid"
 
 # ------------------------------------------------------------------
@@ -28,19 +26,30 @@ def save_tokens(tokens):
     os.makedirs(os.path.dirname(TOKENS_FILE), exist_ok=True)
     json.dump(tokens, open(TOKENS_FILE, "w"), indent=2)
 
+def build_redirect_uri():
+    """
+    Construit l'URI de callback à partir des headers de la requête.
+    Fonctionne derrière reverse-proxy, NAT, localhost, IP locale, nom DNS...
+    """
+    # Scheme : http ou https (respecté si derrière reverse-proxy)
+    scheme = request.headers.get("X-Forwarded-Proto", request.scheme)
+    # Host : IP, nom DNS, port inclus si non 80/443
+    host   = request.headers.get("X-Forwarded-Host", request.host)
+    return f"{scheme}://{host}/callback"
+
 def build_auth_url():
     state = secrets.token_urlsafe(16)
     params = {
         "response_type": "code",
         "client_id":     CLIENT_ID,
-        "redirect_uri":  REDIRECT_URI,
+        "redirect_uri":  build_redirect_uri(),
         "scope":         SCOPE,
         "state":         state,
-        "forwardUrl":    REDIRECT_URI + "?state=" + state,
+        "forwardUrl":    build_redirect_uri() + "?state=" + state,
         "context[device][product]": "WatchlistCleaner",
         "context[device][platform]": "Web",
         "context[device][device]": "Browser",
-        "prompt": "select_account",          # <-- sélection de compte
+        "prompt": "select_account",
     }
     return "https://app.plex.tv/auth/oauth/authorize?" + urlencode(params)
 
@@ -85,7 +94,6 @@ def callback():
     if not code:
         return "Code manquant", 400
 
-    # Échange code → token
     import requests
     resp = requests.post(
         "https://plex.tv/api/v2/oauth/token",
@@ -94,17 +102,17 @@ def callback():
             "client_secret": "",
             "code":          code,
             "grant_type":    "authorization_code",
-            "redirect_uri":  REDIRECT_URI,
+            "redirect_uri":  build_redirect_uri(),
         },
     )
     if not resp.ok:
         return f"Erreur Plex : {resp.text}", 400
 
     token   = resp.json()["access_token"]
+    from plexapi.myplex import MyPlexAccount
     account = MyPlexAccount(token=token)
     username= account.username
 
-    # Sauvegarde
     tokens = load_tokens()
     tokens[username] = token
     save_tokens(tokens)
