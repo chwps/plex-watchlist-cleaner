@@ -6,8 +6,7 @@ services:
     restart: unless-stopped
     environment:
       PLEX_URL: "http://localhost:32400"
-      PLEX_USERNAME: "admin"
-      PLEX_PASSWORD: "adminpass"
+      ADMIN_USERNAME: "adminUser"
       COLLECTIONS: "Collection1,Collection2,Collection3" #No collection limit
       CRON_SCHEDULE: "0 */1 * * *"   # every hour
     volumes:
