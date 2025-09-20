@@ -29,9 +29,8 @@ cat "$CRON_FILE"
 crontab "$CRON_FILE" || echo "[DEBUG] crontab a échoué avec code $?"
 crontab -l || echo "[DEBUG] crontab -l a échoué"
 
-# Lance le serveur web Flask (non bloquant)
-echo "[DEBUG] Lancement du serveur web Flask"
-python /app/web_onboard.py &
+echo "[DEBUG] Lancement de l’app Flask principale"
+python /app/app.py &
 
 # Puis le cron en avant-plan
 if command -v cron >/dev/null 2>&1; then
