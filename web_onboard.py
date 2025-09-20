@@ -59,3 +59,5 @@ def callback():
     <h2>Merci {username} !</h2>
     <p>Le token a été enregistré. Vous pouvez fermer cette fenêtre.</p>
     """
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=False)
