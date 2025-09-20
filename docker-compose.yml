@@ -9,6 +9,7 @@ services:
       ADMIN_USERNAME: "adminUser"
       COLLECTIONS: "Collection1,Collection2,Collection3" #No collection limit
       CRON_SCHEDULE: "0 */1 * * *"   # every hour
+      RUN_SYNC_AT_STARTUP: "true" #decide if it syncs directly or wait for cron, "true" or "false"
     volumes:
       - ./data:/data
     ports:
