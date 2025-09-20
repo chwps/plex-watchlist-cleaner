@@ -6,6 +6,7 @@ from plexapi.server import PlexServer
 logging.basicConfig(level=logging.INFO)
 
 TOKENS_FILE = "/data/user_tokens.json"
+TOKEN_FILE  = "/data/plex_token.json"
 STATE_FILE  = "/data/plex_watchlist_state.json"
 
 def load_tokens():
