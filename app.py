@@ -11,6 +11,19 @@ STATE_FILE  = "/data/plex_watchlist_state.json"
 def load_tokens():
     return json.load(open(TOKENS_FILE)) if os.path.exists(TOKENS_FILE) else {}
 
+def get_admin_token():
+    if os.path.exists(TOKEN_FILE):
+        data = json.load(open(TOKEN_FILE))
+        if time.time() - data["ts"] < TOKEN_TTL:
+            logging.info("Token admin récupéré depuis le cache.")
+            return data["token"]
+    logging.info("Connexion Plex admin pour obtenir le token…")
+    acc   = MyPlexAccount(os.getenv("PLEX_USERNAME"), os.getenv("PLEX_PASSWORD"))
+    token = acc.authenticationToken
+    json.dump({"token": token, "ts": time.time()}, open(TOKEN_FILE, "w"))
+    logging.info("Token admin obtenu et mis en cache.")
+    return token
+
 def list_all_users():
     """Renvoie [{username, token}] sans jamais demander de mot de passe."""
     tokens = load_tokens()
