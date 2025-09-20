@@ -9,7 +9,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY entrypoint.sh app.py ./
+COPY entrypoint.sh app.py web_onboard.py ./
 RUN chmod +x entrypoint.sh
 
 ENTRYPOINT ["/app/entrypoint.sh"]
