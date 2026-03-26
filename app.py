@@ -321,7 +321,7 @@ def run_sync_endpoint():
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    """Écoute les webhooks de Plex pour ajouter un média noté 0.5 à une collection"""
+    """Écoute les webhooks de Plex pour gérer les collections selon les notes"""
     payload_str = request.form.get('payload')
     
     if not payload_str:
@@ -335,7 +335,6 @@ def webhook():
 
     # On ne réagit qu'aux événements de notation
     if data.get('event') == 'media.rate':
-        # Optimisation : On cible exactement les clés vues dans tes logs
         rating = data.get('rating') or data.get('Metadata', {}).get('userRating')
         username = data.get('Account', {}).get('title', 'Inconnu')
         
@@ -344,17 +343,13 @@ def webhook():
         except ValueError:
             rating_val = None
 
-        # 1.0 = 0.5 étoile sur l'interface Plex
-        if rating_val == 1.0:
+        # Si la note est 1.0 (0.5 étoile) OU >= 8.0 (4 étoiles et plus)
+        if rating_val == 1.0 or (rating_val is not None and rating_val >= 8.0):
             metadata_obj = data.get('Metadata', {})
             rating_key = metadata_obj.get('ratingKey')
             title = metadata_obj.get('title', 'Titre inconnu')
             
-            logging.info("L'utilisateur %s a mis 0,5 étoile à '%s'. Ajout à la collection...", username, title)
-            
-            # Notification Discord uniquement quand la note est de 0.5
-            send_to_discord(f"✅ Demande de suppression reçue par {username} pour le film : {title}")
-
+            # Connexion à Plex (commune aux deux actions)
             token = get_admin_token()
             if not token:
                 logging.error("Impossible de modifier : aucun token admin en cache.")
@@ -364,14 +359,27 @@ def webhook():
                 server = PlexServer(PLEX_URL, token=token)
                 item = server.fetchItem(int(rating_key))
                 
-                item.addCollection(WEBHOOK_COLLECTION)
+                # CAS 1 : Note de 0.5 étoile -> On ajoute à la collection
+                if rating_val == 1.0:
+                    logging.info("L'utilisateur %s a mis 0,5 étoile à '%s'. Ajout à la collection...", username, title)
+                    item.addCollection(WEBHOOK_COLLECTION)
+                    send_to_discord(f"🗑️ **Demande de suppression** reçue par {username} pour le film : **{title}**")
+                    logging.info("Succès : '%s' a été ajouté à la collection '%s' !", title, WEBHOOK_COLLECTION)
+                    return "Média ajouté à la collection", 200
                 
-                logging.info("Succès : '%s' a été ajouté à la collection '%s' !", title, WEBHOOK_COLLECTION)
-                return "Média ajouté à la collection", 200
-                
+                # CAS 2 : Note de 4 étoiles ou plus -> On retire de la collection
+                elif rating_val >= 8.0:
+                    # On calcule la note sur 5 pour l'affichage Discord
+                    note_sur_5 = rating_val / 2 
+                    logging.info("L'utilisateur %s a mis %s/5 à '%s'. Retrait de la collection...", username, note_sur_5, title)
+                    item.removeCollection(WEBHOOK_COLLECTION)
+                    send_to_discord(f"🛡️ **Annulation de la suppression** par {username} pour le film : **{title}** (Note modifiée : {note_sur_5}/5)")
+                    logging.info("Succès : '%s' a été retiré de la collection '%s' !", title, WEBHOOK_COLLECTION)
+                    return "Média retiré de la collection", 200
+                    
             except Exception as e:
-                logging.error("Erreur lors de l'ajout de '%s' à la collection : %s", title, e)
-                return f"Erreur d'ajout : {e}", 500
+                logging.error("Erreur lors de la modification de '%s' : %s", title, e)
+                return f"Erreur de modification : {e}", 500
 
     return "Événement ignoré", 200
 
