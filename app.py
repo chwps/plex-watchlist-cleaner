@@ -314,7 +314,7 @@ def run_sync_endpoint():
 @app.route('/webhook', methods=['POST'])
 def webhook():
     """Écoute les webhooks de Plex pour ajouter un média noté 0.5 à une collection"""
-    
+    logging.info("--- Webhook reçu ! ---")
     payload_str = request.form.get('payload')
     
     if not payload_str:
