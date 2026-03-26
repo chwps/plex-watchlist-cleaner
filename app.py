@@ -322,8 +322,6 @@ def run_sync_endpoint():
 @app.route('/webhook', methods=['POST'])
 def webhook():
     """Écoute les webhooks de Plex pour ajouter un média noté 0.5 à une collection"""
-    send_to_discord("🔔 Un Webhook vient d'arriver sur le NAS !")
-
     payload_str = request.form.get('payload')
     
     if not payload_str:
@@ -335,36 +333,27 @@ def webhook():
             logging.error("Erreur de lecture du Webhook: %s", e)
             return "JSON invalide", 400
 
-    # DEBUG : Affiche tout le contenu du webhook dans les logs de ton conteneur Docker
-    logging.info("=== PAYLOAD PLEX REÇU ===")
-    logging.info(json.dumps(data, indent=2))
-    logging.info("=========================")
-
+    # On ne réagit qu'aux événements de notation
     if data.get('event') == 'media.rate':
-        # On vérifie si la note est à la racine (Rating) ou dans les Metadata
-        rating_obj = data.get('Rating', {})
-        metadata_obj = data.get('Metadata', {})
-        
-        # On tente de récupérer la note à deux endroits possibles
-        rating = rating_obj.get('value') or metadata_obj.get('userRating')
-        
+        # Optimisation : On cible exactement les clés vues dans tes logs
+        rating = data.get('rating') or data.get('Metadata', {}).get('userRating')
         username = data.get('Account', {}).get('title', 'Inconnu')
         
-        # On convertit en float pour éviter les problèmes entre 1 et 1.0 ou "1"
         try:
             rating_val = float(rating) if rating is not None else None
         except ValueError:
             rating_val = None
 
-        logging.info("Événement media.rate détecté. Utilisateur: %s, Note lue: %s", username, rating_val)
-
         # 1.0 = 0.5 étoile sur l'interface Plex
         if rating_val == 1.0:
+            metadata_obj = data.get('Metadata', {})
             rating_key = metadata_obj.get('ratingKey')
             title = metadata_obj.get('title', 'Titre inconnu')
             
-            send_to_discord(f"✅ Suppression demandée pour : {title}")
             logging.info("L'utilisateur %s a mis 0,5 étoile à '%s'. Ajout à la collection...", username, title)
+            
+            # Notification Discord uniquement quand la note est de 0.5
+            send_to_discord(f"✅ Demande de suppression reçue par {username} pour le film : {title}")
 
             token = get_admin_token()
             if not token:
@@ -383,8 +372,6 @@ def webhook():
             except Exception as e:
                 logging.error("Erreur lors de l'ajout de '%s' à la collection : %s", title, e)
                 return f"Erreur d'ajout : {e}", 500
-        else:
-            logging.info("La note (%s) n'est pas égale à 1.0 (0.5 étoile). On ignore.", rating_val)
 
     return "Événement ignoré", 200
 
