@@ -15,7 +15,6 @@ Checks for new media added to collections automatically.
 
 ### Exemple of Docker Compose yml :
 ```yaml
-version: "3.9"
 services:
   plex-watchlist-cleaner:
     image: ghcr.io/chwps/plex-watchlist-cleaner:latest
