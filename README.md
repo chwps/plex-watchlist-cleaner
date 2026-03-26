@@ -23,17 +23,14 @@ services:
     restart: unless-stopped
     environment:
       PLEX_URL: "http://localhost:32400"
-      PLEX_USERNAME: "admin"
-      PLEX_PASSWORD: "adminpass"
+      ADMIN_USERNAME: "adminUser"
       COLLECTIONS: "Collection1,Collection2,Collection3" #No collection limit
-      PLEX_EXTRA_USERNAME_1: usernameFriend1
-      PLEX_EXTRA_PASSWORD_1: passFriend1
-      PLEX_EXTRA_USERNAME_2: usernameFriend2
-      PLEX_EXTRA_PASSWORD_2: passFriend2
-      #No user limit
       CRON_SCHEDULE: "0 */1 * * *"   # every hour
+      RUN_SYNC_AT_STARTUP: "true" #decide if it syncs directly or wait for cron, "true" or "false"
     volumes:
       - ./data:/data
+    ports:
+      - "5000:5000"
 ```
 
 I also made a version with webhooks but it's not finished and not maintained, the part for watchlist media deletion is working and it can receive webhooks, but I didn't test it with an agent that automatically sends webhooks. Feel free to update it for your needs. Media is searched by its GUID.
