@@ -40,6 +40,7 @@ TOKEN_TTL = int(os.getenv("TOKEN_TTL_HOURS", "24")) * 3600
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME")  # si défini, on considérera ce compte comme admin
 PLEX_URL = os.getenv("PLEX_URL", "http://localhost:32400")
 COLLECTIONS = [c.strip() for c in os.getenv("COLLECTIONS", "").split(",") if c.strip()]
+WEBHOOK_COLLECTION = os.getenv("WEBHOOK_COLLECTION", "Demande de suppression")
 
 # ------------------------------------------------------------------
 # UTILS stockage / client id
@@ -308,6 +309,53 @@ def run_sync_endpoint():
     except Exception as e:
         logging.exception("Erreur lors du run_sync")
         return f"error: {e}", 500
+
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    """Écoute les webhooks de Plex pour ajouter un média noté 0.5 à une collection"""
+    
+    payload_str = request.form.get('payload')
+    
+    if not payload_str:
+        data = request.get_json(silent=True) or {}
+    else:
+        try:
+            data = json.loads(payload_str)
+        except Exception as e:
+            logging.error("Erreur de lecture du Webhook: %s", e)
+            return "JSON invalide", 400
+
+    if data.get('event') == 'media.rate':
+        rating = data.get('Rating', {}).get('value')
+        username = data.get('Account', {}).get('title', 'Inconnu')
+        
+        # 1 = 0.5 étoile sur l'interface Plex
+        if rating == 1:
+            rating_key = data.get('Metadata', {}).get('ratingKey')
+            title = data.get('Metadata', {}).get('title', 'Titre inconnu')
+            
+            logging.info("L'utilisateur %s a mis 0,5 étoile à '%s'. Ajout à la collection...", username, title)
+
+            token = get_admin_token()
+            if not token:
+                logging.error("Impossible de modifier : aucun token admin en cache.")
+                return "Erreur token admin", 500
+
+            try:
+                server = PlexServer(PLEX_URL, token=token)
+                item = server.fetchItem(int(rating_key))
+                
+                item.addCollection(WEBHOOK_COLLECTION)
+                
+                logging.info("Succès : '%s' a été ajouté à la collection '%s' !", title, WEBHOOK_COLLECTION)
+                return "Média ajouté à la collection", 200
+                
+            except Exception as e:
+                logging.error("Erreur lors de l'ajout de '%s' à la collection : %s", title, e)
+                return f"Erreur d'ajout : {e}", 500
+
+    return "Événement ignoré", 200
 
 # ------------------------------------------------------------------
 # DÉMARRAGE
