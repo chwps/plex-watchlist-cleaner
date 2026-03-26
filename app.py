@@ -41,6 +41,7 @@ ADMIN_USERNAME = os.getenv("ADMIN_USERNAME")  # si défini, on considérera ce c
 PLEX_URL = os.getenv("PLEX_URL", "http://localhost:32400")
 COLLECTIONS = [c.strip() for c in os.getenv("COLLECTIONS", "").split(",") if c.strip()]
 WEBHOOK_COLLECTION = os.getenv("WEBHOOK_COLLECTION", "Demande de suppression")
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")  #pour notifications Discord
 
 # ------------------------------------------------------------------
 # UTILS stockage / client id
@@ -100,6 +101,13 @@ def get_admin_token():
     # 3) pas de token admin disponible
     logging.warning("Aucun token admin disponible en cache ni dans user_tokens.json.")
     return None
+
+def send_to_discord(message):
+    if DISCORD_WEBHOOK_URL:
+        try:
+            requests.post(DISCORD_WEBHOOK_URL, json={"content": message}, timeout=5)
+        except Exception as e:
+            logging.error("Erreur Discord : %s", e)
 
 # ------------------------------------------------------------------
 # PIN / Auth App flow (onboarding web)
@@ -314,7 +322,8 @@ def run_sync_endpoint():
 @app.route('/webhook', methods=['POST'])
 def webhook():
     """Écoute les webhooks de Plex pour ajouter un média noté 0.5 à une collection"""
-    logging.info("--- Webhook reçu ! ---")
+    send_to_discord("🔔 Un Webhook vient d'arriver sur le NAS !")
+
     payload_str = request.form.get('payload')
     
     if not payload_str:
@@ -334,6 +343,7 @@ def webhook():
         if rating == 1:
             rating_key = data.get('Metadata', {}).get('ratingKey')
             title = data.get('Metadata', {}).get('title', 'Titre inconnu')
+            send_to_discord(f"✅ Suppression demandée pour : {title}")
             
             logging.info("L'utilisateur %s a mis 0,5 étoile à '%s'. Ajout à la collection...", username, title)
 
