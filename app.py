@@ -258,8 +258,8 @@ def remove_batch(guids):
             logging.exception("Erreur pour %s : %s", user["username"], e)
 
 def sync_ratings():
-    """Vérifie les notes de tous les utilisateurs et met à jour la collection (Tri via Python)"""
-    logging.info("Démarrage de la vérification des notes (Polling) pour tous les utilisateurs...")
+    """Vérifie les notes de tous les utilisateurs via l'API Plex et met à jour la collection"""
+    logging.info("Démarrage de la vérification des notes (Polling via API) pour tous les utilisateurs...")
     
     admin_token = get_admin_token()
     if not admin_token:
@@ -286,49 +286,59 @@ def sync_ratings():
         try:
             user_server = PlexServer(PLEX_URL, token=token)
             
+            # Ligne de contrôle : On s'assure que Plex nous voit bien comme le bon utilisateur
+            try:
+                plex_identity = user_server.myPlexAccount().title
+                logging.info("Vérification identité Plex : connecté en tant que '%s'", plex_identity)
+            except:
+                logging.info("Vérification identité Plex : impossible de récupérer le nom du compte")
+
             for section in user_server.library.sections():
                 if section.type not in {"movie", "show"}:
                     continue
 
                 try:
-                    # 1. On demande la liste basique (très léger pour le NAS)
-                    all_items = section.all()
+                    # 1. On demande à Plex UNIQUEMENT les médias notés 0.5 étoile (1.0) par ce compte
+                    bad_items = section.search(userRating=1.0)
                     
-                    # 2. Python filtre instantanément les médias qui ont vraiment été notés par l'utilisateur
-                    user_actual_ratings = [item for item in all_items if item.userRating is not None]
+                    # 2. On demande à Plex UNIQUEMENT les médias notés 4 étoiles ou plus (>= 8.0) par ce compte
+                    good_items = section.search(userRating__gte=8.0)
+                    
+                    # On fusionne les deux listes
+                    user_actual_ratings = bad_items + good_items
                     
                 except Exception as e:
-                    logging.warning("Impossible de lire la bibliothèque '%s' : %s", section.title, e)
+                    logging.warning("Impossible de filtrer les notes via l'API dans '%s' : %s", section.title, e)
                     continue
 
                 if not user_actual_ratings:
-                    # On passe en silence s'il n'y a aucune note
+                    # Rien de pertinent trouvé, on passe au suivant en silence
                     continue
 
-                logging.info("Trouvé %d média(s) noté(s) par %s dans '%s'.", len(user_actual_ratings), username, section.title)
+                logging.info("Trouvé %d média(s) pertinent(s) pour %s dans '%s'.", len(user_actual_ratings), username, section.title)
 
                 for item in user_actual_ratings:
-                    rating_val = float(item.userRating)
-                    
-                    # On ne traite que les notes qui nous intéressent (0.5 ou >= 4 étoiles)
-                    if rating_val == 1.0 or rating_val >= 8.0:
-                        logging.info("-> Examen de '%s' (Note trouvée : %s/10)", item.title, rating_val)
+                    if item.userRating is None:
+                        continue
                         
-                        admin_item = admin_server.fetchItem(item.ratingKey)
-                        current_collections = [c.tag for c in admin_item.collections]
+                    rating_val = float(item.userRating)
+                    logging.info("-> Examen de '%s' (Note trouvée : %s/10)", item.title, rating_val)
+                    
+                    admin_item = admin_server.fetchItem(item.ratingKey)
+                    current_collections = [c.tag for c in admin_item.collections]
 
-                        # CAS 1 : Note = 0.5 (1.0) et pas encore dans la collection
-                        if rating_val == 1.0 and WEBHOOK_COLLECTION not in current_collections:
-                            logging.info("Action : Ajout de '%s' à la collection.", item.title)
-                            admin_item.addCollection(WEBHOOK_COLLECTION)
-                            send_to_discord(f"🔄 **Synchro** : Demande de suppression trouvée pour **{item.title}** (Noté par {username})")
+                    # CAS 1 : Note = 0.5 (1.0) et pas encore dans la collection
+                    if rating_val == 1.0 and WEBHOOK_COLLECTION not in current_collections:
+                        logging.info("Action : Ajout de '%s' à la collection.", item.title)
+                        admin_item.addCollection(WEBHOOK_COLLECTION)
+                        send_to_discord(f"🔄 **Synchro** : Demande de suppression trouvée pour **{item.title}** (Noté par {username})")
 
-                        # CAS 2 : Note >= 4 (8.0) et présent dans la collection
-                        elif rating_val >= 8.0 and WEBHOOK_COLLECTION in current_collections:
-                            note_sur_5 = rating_val / 2
-                            logging.info("Action : Retrait de '%s' de la collection.", item.title)
-                            admin_item.removeCollection(WEBHOOK_COLLECTION)
-                            send_to_discord(f"🛡️ **Synchro** : Annulation de suppression pour **{item.title}** ({username} a mis {note_sur_5}/5)")
+                    # CAS 2 : Note >= 4 (8.0) et présent dans la collection
+                    elif rating_val >= 8.0 and WEBHOOK_COLLECTION in current_collections:
+                        note_sur_5 = rating_val / 2
+                        logging.info("Action : Retrait de '%s' de la collection.", item.title)
+                        admin_item.removeCollection(WEBHOOK_COLLECTION)
+                        send_to_discord(f"🛡️ **Synchro** : Annulation de suppression pour **{item.title}** ({username} a mis {note_sur_5}/5)")
 
         except Exception as e:
             logging.error("Erreur générale pour l'utilisateur %s : %s", username, e)
