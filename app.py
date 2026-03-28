@@ -207,8 +207,8 @@ def remove_batch(guids):
             logging.error("Erreur pour %s : %s", user["username"], e)
 
 def sync_ratings():
-    """Vérifie les notes, agrège les données, et applique un consensus global"""
-    logging.info("Démarrage de la vérification des notes (Polling avec Consensus)...")
+    """Vérifie les notes, agrège les données, et applique un consensus global en temps réel"""
+    logging.info("Démarrage de la vérification des notes (Polling Temps Réel avec Consensus)...")
     
     admin_token = get_admin_token()
     if not admin_token: return
@@ -241,20 +241,19 @@ def sync_ratings():
                 if section.type not in {"movie", "show"}: continue
 
                 try:
-                    # On demande les notes = 0.5 étoile
-                    bad_items = section.search(userRating=1.0)
+                    # CORRECTION : On contourne l'index de recherche de Plex pour avoir du temps réel
+                    all_items = section.all()
                     
-                    # On demande TOUTES les notes >= 1 étoile (API Plex accepte mieux __gte que __gt)
-                    good_items = section.search(userRating__gte=2.0)
-                    
-                    user_actual_ratings = bad_items + good_items
+                    # On filtre instantanément avec Python
+                    user_actual_ratings = [
+                        item for item in all_items 
+                        if item.userRating is not None and (float(item.userRating) == 1.0 or float(item.userRating) >= 2.0)
+                    ]
                     
                     if user_actual_ratings:
                         logging.info("Trouvé %d média(s) noté(s) pertinent(s) pour %s dans '%s'.", len(user_actual_ratings), username, section.title)
                     
                     for item in user_actual_ratings:
-                        if item.userRating is None: continue
-                            
                         rating_val = float(item.userRating)
                         logging.info("-> Examen de '%s' (Note trouvée : %s/10 par %s)", item.title, rating_val, username)
 
