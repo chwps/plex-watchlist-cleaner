@@ -5,7 +5,7 @@ App combinée :
  - stockage tokens utilisateurs (/data/user_tokens.json)
  - si l'utilisateur connecté est l'admin (ADMIN_USERNAME), on met aussi à jour /data/plex_token.json
  - routine de sync des collections (fonction sync_collections_once)
- - Logique de consensus (une note > 0.5 annule la suppression)
+ - Logique de consensus (une note >= 1/5 annule la suppression)
 """
 
 import os
@@ -228,6 +228,8 @@ def sync_ratings():
     for u in users:
         username = u["username"]
         token = u["token"]
+        logging.info("--- Analyse du compte : %s ---", username)
+        
         try:
             if token == admin_token:
                 user_server = admin_server
@@ -239,27 +241,44 @@ def sync_ratings():
                 if section.type not in {"movie", "show"}: continue
 
                 try:
-                    # On identifie les demandes de suppression (0.5 étoile = 1.0)
+                    # On demande les notes = 0.5 étoile
                     bad_items = section.search(userRating=1.0)
-                    # On identifie TOUT média protégé (plus de 0.5 étoile = >1.0)
-                    protected_items = section.search(userRating__gt=1.0)
+                    
+                    # On demande TOUTES les notes >= 1 étoile (API Plex accepte mieux __gte que __gt)
+                    good_items = section.search(userRating__gte=2.0)
+                    
+                    user_actual_ratings = bad_items + good_items
+                    
+                    if user_actual_ratings:
+                        logging.info("Trouvé %d média(s) noté(s) pertinent(s) pour %s dans '%s'.", len(user_actual_ratings), username, section.title)
+                    
+                    for item in user_actual_ratings:
+                        if item.userRating is None: continue
+                            
+                        rating_val = float(item.userRating)
+                        logging.info("-> Examen de '%s' (Note trouvée : %s/10 par %s)", item.title, rating_val, username)
 
-                    for item in bad_items:
                         rk = item.ratingKey
-                        if rk not in media_state: media_state[rk] = {'title': item.title, 'is_bad': False, 'bad_users': [], 'is_protected': False, 'protectors': []}
-                        media_state[rk]['is_bad'] = True
-                        media_state[rk]['bad_users'].append(username)
+                        if rk not in media_state:
+                            media_state[rk] = {'title': item.title, 'is_bad': False, 'bad_users': [], 'is_protected': False, 'protectors': []}
 
-                    for item in protected_items:
-                        rk = item.ratingKey
-                        if rk not in media_state: media_state[rk] = {'title': item.title, 'is_bad': False, 'bad_users': [], 'is_protected': False, 'protectors': []}
-                        media_state[rk]['is_protected'] = True
-                        media_state[rk]['protectors'].append(f"{username} ({float(item.userRating)/2}/5)")
+                        if rating_val == 1.0:
+                            media_state[rk]['is_bad'] = True
+                            media_state[rk]['bad_users'].append(username)
+                        elif rating_val >= 2.0:
+                            media_state[rk]['is_protected'] = True
+                            media_state[rk]['protectors'].append(f"{username} ({rating_val/2}/5)")
 
-                except Exception:
-                    pass
+                except Exception as e:
+                    logging.warning("Erreur lors de la recherche dans %s : %s", section.title, e)
+
         except Exception as e:
             logging.error("Erreur générale pour %s : %s", username, e)
+
+    logging.info("--- Phase de décision (Consensus global) ---")
+    if not media_state:
+        logging.info("Aucun média noté 0.5 ou protégé n'a été trouvé.")
+        return
 
     # Une fois qu'on a l'avis de tout le monde, on prend les décisions
     for rk, state in media_state.items():
@@ -273,6 +292,8 @@ def sync_ratings():
                     logging.info("Consensus : Retrait de '%s' car protégé par %s", state['title'], state['protectors'])
                     admin_item.removeCollection(WEBHOOK_COLLECTION)
                     send_to_discord(f"🛡️ **Maintien sur le serveur** : La suppression de **{state['title']}** a été annulée grâce aux notes de : {', '.join(state['protectors'])}")
+                elif state['is_bad']:
+                    logging.info("Consensus : '%s' demandé en suppression par %s, MAIS protégé par %s. Action ignorée.", state['title'], state['bad_users'], state['protectors'])
             
             elif state['is_bad']:
                 # Uniquement des notes de 0.5, aucune protection
@@ -282,7 +303,7 @@ def sync_ratings():
                     send_to_discord(f"🗑️ **Demande de suppression** validée pour **{state['title']}** (noté 0.5 par {', '.join(state['bad_users'])})")
 
         except Exception as e:
-            logging.error("Erreur lors de l'application du consensus pour %s : %s", rk, e)
+            logging.error("Erreur lors de l'application du consensus pour '%s' : %s", state['title'], e)
 
 def sync_collections_once():
     sync_ratings()
@@ -317,7 +338,7 @@ def sync_collections_once():
 # ------------------------------------------------------------------
 def process_webhook_rating(rating_val, rating_key, title, username):
     """Vérifie le consensus en arrière-plan suite à un webhook pour ne pas bloquer Plex"""
-    logging.info("Webhook reçu pour '%s'. Vérification globale...", title)
+    logging.info("Webhook reçu pour '%s' (Note: %s/10). Vérification globale...", title, rating_val)
     
     admin_token = get_admin_token()
     if not admin_token: return
@@ -339,9 +360,11 @@ def process_webhook_rating(rating_val, rating_key, title, username):
                 user_server = account.resource(server_name).connect()
 
             item = user_server.fetchItem(int(rating_key))
-            if item.userRating is not None and float(item.userRating) > 1.0:
-                is_protected = True
-                protectors.append(f"{u['username']} ({float(item.userRating)/2}/5)")
+            if item.userRating is not None:
+                r_val = float(item.userRating)
+                if r_val >= 2.0:  # >= 1 étoile
+                    is_protected = True
+                    protectors.append(f"{u['username']} ({r_val/2}/5)")
         except Exception:
             pass
 
@@ -355,7 +378,7 @@ def process_webhook_rating(rating_val, rating_key, title, username):
                 admin_item.removeCollection(WEBHOOK_COLLECTION)
                 send_to_discord(f"🛡️ **Maintien sur le serveur** : La suppression de **{title}** est bloquée/annulée grâce aux notes de : {', '.join(protectors)}")
             elif rating_val == 1.0:
-                logging.info("Webhook : %s a noté 0.5, mais '%s' est protégé par %s. Ignoré.", username, title, protectors)
+                logging.info("Webhook : %s a noté 0.5, mais '%s' est protégé par %s. Action ignorée.", username, title, protectors)
         else:
             if rating_val == 1.0 and WEBHOOK_COLLECTION not in current_collections:
                 admin_item.addCollection(WEBHOOK_COLLECTION)
