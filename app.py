@@ -257,7 +257,69 @@ def remove_batch(guids):
         except Exception as e:
             logging.exception("Erreur pour %s : %s", user["username"], e)
 
+def sync_ratings():
+    """Vérifie les dernières notes de tous les utilisateurs et met à jour la collection"""
+    logging.info("Démarrage de la vérification des notes (Polling) pour tous les utilisateurs...")
+    
+    admin_token = get_admin_token()
+    if not admin_token:
+        logging.error("Pas de token admin, impossible de modifier les collections.")
+        return
+
+    admin_server = PlexServer(PLEX_URL, token=admin_token)
+    users = list_all_users()
+
+    for u in users:
+        username = u["username"]
+        token = u["token"]
+        
+        try:
+            # 1. On se connecte à Plex en tant que cet utilisateur spécifique
+            user_server = PlexServer(PLEX_URL, token=token)
+            
+            for section in user_server.library.sections():
+                if section.type not in {"movie", "show"}:
+                    continue
+
+                # 2. On cherche les 50 derniers médias notés par cet utilisateur
+                try:
+                    recent_rated = section.search(sort="lastRatedAt:desc", limit=50)
+                except Exception:
+                    # Sécurité si le tri lastRatedAt n'est pas supporté sur une vieille version
+                    continue
+
+                for item in recent_rated:
+                    rating = item.userRating
+                    if rating is None:
+                        continue
+                    
+                    # On convertit en float par sécurité
+                    rating_val = float(rating)
+
+                    # On récupère l'objet côté Admin pour pouvoir modifier ses collections
+                    admin_item = admin_server.fetchItem(item.ratingKey)
+                    current_collections = [c.tag for c in admin_item.collections]
+
+                    # CAS 1 : Note = 0.5 (1.0) et pas encore dans la collection
+                    if rating_val == 1.0 and WEBHOOK_COLLECTION not in current_collections:
+                        logging.info("Synchro : %s a noté 0.5 '%s'. Ajout à la collection...", username, item.title)
+                        admin_item.addCollection(WEBHOOK_COLLECTION)
+                        send_to_discord(f"🔄 **Synchro** : Demande de suppression trouvée pour **{item.title}** (Noté par {username} sur mobile/autre)")
+
+                    # CAS 2 : Note >= 4 (8.0) et présent dans la collection
+                    elif rating_val >= 8.0 and WEBHOOK_COLLECTION in current_collections:
+                        note_sur_5 = rating_val / 2
+                        logging.info("Synchro : %s a noté %s/5 '%s'. Retrait de la collection...", username, note_sur_5, item.title)
+                        admin_item.removeCollection(WEBHOOK_COLLECTION)
+                        send_to_discord(f"🛡️ **Synchro** : Annulation de suppression pour **{item.title}** ({username} a changé sa note à {note_sur_5}/5)")
+
+        except Exception as e:
+            logging.error("Erreur lors de la vérification des notes pour %s : %s", username, e)
+
 def sync_collections_once():
+    # === NOUVEAU : On lance d'abord la vérification des notes ===
+    sync_ratings()
+    
     if not COLLECTIONS:
         logging.warning("Aucune collection configurée (env COLLECTIONS).")
         return
