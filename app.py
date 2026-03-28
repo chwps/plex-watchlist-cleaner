@@ -273,7 +273,10 @@ def sync_ratings():
         return
 
     try:
+        # Connexion admin au serveur local
         admin_server = PlexServer(PLEX_URL, token=admin_token)
+        # On récupère le nom exact de ton serveur (ex: "NAS") pour que les utilisateurs puissent le trouver
+        server_name = admin_server.friendlyName 
     except Exception as e:
         logging.error("Erreur lors de la connexion admin au serveur : %s", e)
         return
@@ -284,7 +287,14 @@ def sync_ratings():
         logging.info("--- Analyse du compte : %s ---", username)
         
         try:
-            user_server = PlexServer(PLEX_URL, token=token)
+            # NOUVELLE MÉTHODE DE CONNEXION POUR LES UTILISATEURS
+            if token == admin_token:
+                # Si c'est l'admin, on peut se connecter directement en local (plus rapide)
+                user_server = PlexServer(PLEX_URL, token=token)
+            else:
+                # Si c'est un ami, on se connecte via Plex.tv puis on cible le serveur
+                account = MyPlexAccount(token=token)
+                user_server = account.resource(server_name).connect()
             
             # Ligne de contrôle : On s'assure que Plex nous voit bien comme le bon utilisateur
             try:
