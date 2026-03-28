@@ -258,7 +258,7 @@ def remove_batch(guids):
             logging.exception("Erreur pour %s : %s", user["username"], e)
 
 def sync_ratings():
-    """Vérifie les dernières notes de tous les utilisateurs et met à jour la collection"""
+    """Vérifie les notes de tous les utilisateurs et met à jour la collection"""
     logging.info("Démarrage de la vérification des notes (Polling) pour tous les utilisateurs...")
     
     admin_token = get_admin_token()
@@ -294,32 +294,33 @@ def sync_ratings():
                 logging.info("Recherche dans la bibliothèque : %s", section.title)
 
                 try:
-                    # On tente de récupérer les 50 derniers médias notés
-                    recent_rated = section.search(sort="lastRatedAt:desc", limit=50)
-                    logging.info("Trouvé %d médias récemment notés dans '%s'.", len(recent_rated), section.title)
+                    # CORRECTION : On demande tous les médias qui ont été notés par l'utilisateur
+                    rated_items = section.search(filters={'userRating>>': 0})
+                    logging.info("Trouvé %d médias notés dans '%s'.", len(rated_items), section.title)
                 except Exception as e:
-                    logging.warning("Impossible d'utiliser le tri lastRatedAt sur '%s' : %s", section.title, e)
+                    logging.warning("Impossible de chercher les notes dans '%s' : %s", section.title, e)
                     continue
 
-                for item in recent_rated:
+                for item in rated_items:
                     rating = item.userRating
                     if rating is None:
                         continue
                     
                     rating_val = float(rating)
-                    logging.info("-> Film trouvé : '%s' noté %s par %s", item.title, rating_val, username)
-
+                    
                     admin_item = admin_server.fetchItem(item.ratingKey)
                     current_collections = [c.tag for c in admin_item.collections]
 
+                    # Note = 0.5 (1.0) et pas encore dans la collection
                     if rating_val == 1.0 and WEBHOOK_COLLECTION not in current_collections:
-                        logging.info("Action : Ajout de '%s' à la collection.", item.title)
+                        logging.info("Action : Ajout de '%s' à la collection (noté 0.5 par %s).", item.title, username)
                         admin_item.addCollection(WEBHOOK_COLLECTION)
                         send_to_discord(f"🔄 **Synchro** : Demande de suppression trouvée pour **{item.title}** (Noté par {username})")
 
+                    # Note >= 4 (8.0) et présent dans la collection
                     elif rating_val >= 8.0 and WEBHOOK_COLLECTION in current_collections:
                         note_sur_5 = rating_val / 2
-                        logging.info("Action : Retrait de '%s' de la collection.", item.title)
+                        logging.info("Action : Retrait de '%s' de la collection (noté %s/5 par %s).", item.title, note_sur_5, username)
                         admin_item.removeCollection(WEBHOOK_COLLECTION)
                         send_to_discord(f"🛡️ **Synchro** : Annulation de suppression pour **{item.title}** ({username} a mis {note_sur_5}/5)")
 
