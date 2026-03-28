@@ -294,19 +294,21 @@ def sync_ratings():
                 logging.info("Recherche dans la bibliothèque : %s", section.title)
 
                 try:
-                    # CORRECTION : On demande tous les médias qui ont été notés par l'utilisateur
+                    # On récupère le "pool" global des médias notés
                     rated_items = section.search(filters={'userRating>>': 0})
-                    logging.info("Trouvé %d médias notés dans '%s'.", len(rated_items), section.title)
+                    
+                    # On compte uniquement ceux que CET utilisateur a noté
+                    user_actual_ratings = [item for item in rated_items if item.userRating is not None]
+                    
+                    if user_actual_ratings:
+                        logging.info("Trouvé %d média(s) noté(s) par %s dans '%s'.", len(user_actual_ratings), username, section.title)
+                    
                 except Exception as e:
                     logging.warning("Impossible de chercher les notes dans '%s' : %s", section.title, e)
                     continue
 
-                for item in rated_items:
-                    rating = item.userRating
-                    if rating is None:
-                        continue
-                    
-                    rating_val = float(rating)
+                for item in user_actual_ratings:
+                    rating_val = float(item.userRating)
                     
                     admin_item = admin_server.fetchItem(item.ratingKey)
                     current_collections = [c.tag for c in admin_item.collections]
