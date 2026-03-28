@@ -258,7 +258,7 @@ def remove_batch(guids):
             logging.exception("Erreur pour %s : %s", user["username"], e)
 
 def sync_ratings():
-    """Vérifie les notes de tous les utilisateurs et met à jour la collection (Polling optimisé)"""
+    """Vérifie les notes de tous les utilisateurs et met à jour la collection (Tri via Python)"""
     logging.info("Démarrage de la vérification des notes (Polling) pour tous les utilisateurs...")
     
     admin_token = get_admin_token()
@@ -270,11 +270,9 @@ def sync_ratings():
     logging.info("Nombre d'utilisateurs trouvés : %d", len(users))
 
     if not users:
-        logging.warning("Aucun utilisateur à vérifier.")
         return
 
     try:
-        # Connexion globale en tant qu'admin pour modifier les collections
         admin_server = PlexServer(PLEX_URL, token=admin_token)
     except Exception as e:
         logging.error("Erreur lors de la connexion admin au serveur : %s", e)
@@ -286,57 +284,51 @@ def sync_ratings():
         logging.info("--- Analyse du compte : %s ---", username)
         
         try:
-            # Connexion locale en tant que l'utilisateur pour lire SES notes
             user_server = PlexServer(PLEX_URL, token=token)
             
             for section in user_server.library.sections():
                 if section.type not in {"movie", "show"}:
                     continue
 
-                logging.info("Recherche dans la bibliothèque : %s", section.title)
-
                 try:
-                    # 1. On cherche UNIQUEMENT les médias notés 0.5 étoile (1.0) par CET utilisateur
-                    bad_items = section.search(userRating=1.0)
+                    # 1. On demande la liste basique (très léger pour le NAS)
+                    all_items = section.all()
                     
-                    # 2. On cherche UNIQUEMENT les médias notés 4 étoiles ou plus (>= 8.0) par CET utilisateur
-                    good_items = section.search(userRating__gte=8.0)
+                    # 2. Python filtre instantanément les médias qui ont vraiment été notés par l'utilisateur
+                    user_actual_ratings = [item for item in all_items if item.userRating is not None]
                     
-                    # On regroupe les deux listes de résultats
-                    user_actual_ratings = bad_items + good_items
-                    
-                    if user_actual_ratings:
-                        logging.info("Trouvé %d média(s) pertinent(s) pour %s dans '%s'.", len(user_actual_ratings), username, section.title)
-                    else:
-                        # On passe silencieusement au suivant si rien ne correspond (Zéro charge pour le NAS)
-                        continue
-                        
                 except Exception as e:
-                    logging.warning("Impossible de chercher les notes exactes dans '%s' : %s", section.title, e)
+                    logging.warning("Impossible de lire la bibliothèque '%s' : %s", section.title, e)
                     continue
 
+                if not user_actual_ratings:
+                    # On passe en silence s'il n'y a aucune note
+                    continue
+
+                logging.info("Trouvé %d média(s) noté(s) par %s dans '%s'.", len(user_actual_ratings), username, section.title)
+
                 for item in user_actual_ratings:
-                    if item.userRating is None:
-                        continue
-                        
                     rating_val = float(item.userRating)
                     
-                    # On récupère l'objet côté Admin pour pouvoir modifier ses collections
-                    admin_item = admin_server.fetchItem(item.ratingKey)
-                    current_collections = [c.tag for c in admin_item.collections]
+                    # On ne traite que les notes qui nous intéressent (0.5 ou >= 4 étoiles)
+                    if rating_val == 1.0 or rating_val >= 8.0:
+                        logging.info("-> Examen de '%s' (Note trouvée : %s/10)", item.title, rating_val)
+                        
+                        admin_item = admin_server.fetchItem(item.ratingKey)
+                        current_collections = [c.tag for c in admin_item.collections]
 
-                    # CAS 1 : Note = 0.5 (1.0) et pas encore dans la collection
-                    if rating_val == 1.0 and WEBHOOK_COLLECTION not in current_collections:
-                        logging.info("Action : Ajout de '%s' à la collection (noté 0.5 par %s).", item.title, username)
-                        admin_item.addCollection(WEBHOOK_COLLECTION)
-                        send_to_discord(f"🔄 **Synchro** : Demande de suppression trouvée pour **{item.title}** (Noté par {username})")
+                        # CAS 1 : Note = 0.5 (1.0) et pas encore dans la collection
+                        if rating_val == 1.0 and WEBHOOK_COLLECTION not in current_collections:
+                            logging.info("Action : Ajout de '%s' à la collection.", item.title)
+                            admin_item.addCollection(WEBHOOK_COLLECTION)
+                            send_to_discord(f"🔄 **Synchro** : Demande de suppression trouvée pour **{item.title}** (Noté par {username})")
 
-                    # CAS 2 : Note >= 4 (8.0) et présent dans la collection
-                    elif rating_val >= 8.0 and WEBHOOK_COLLECTION in current_collections:
-                        note_sur_5 = rating_val / 2
-                        logging.info("Action : Retrait de '%s' de la collection (noté %s/5 par %s).", item.title, note_sur_5, username)
-                        admin_item.removeCollection(WEBHOOK_COLLECTION)
-                        send_to_discord(f"🛡️ **Synchro** : Annulation de suppression pour **{item.title}** ({username} a mis {note_sur_5}/5)")
+                        # CAS 2 : Note >= 4 (8.0) et présent dans la collection
+                        elif rating_val >= 8.0 and WEBHOOK_COLLECTION in current_collections:
+                            note_sur_5 = rating_val / 2
+                            logging.info("Action : Retrait de '%s' de la collection.", item.title)
+                            admin_item.removeCollection(WEBHOOK_COLLECTION)
+                            send_to_discord(f"🛡️ **Synchro** : Annulation de suppression pour **{item.title}** ({username} a mis {note_sur_5}/5)")
 
         except Exception as e:
             logging.error("Erreur générale pour l'utilisateur %s : %s", username, e)
