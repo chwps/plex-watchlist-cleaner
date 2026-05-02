@@ -15,7 +15,6 @@ Checks for new media added to collections automatically.
 
 ### Exemple of Docker Compose yml :
 ```yaml
-version: "3.9"
 services:
   plex-watchlist-cleaner:
     image: ghcr.io/chwps/plex-watchlist-cleaner:latest
@@ -25,6 +24,7 @@ services:
       PLEX_URL: "http://localhost:32400"
       ADMIN_USERNAME: "adminUser"
       COLLECTIONS: "Collection1,Collection2,Collection3" #No collection limit
+      WEBHOOK_COLLECTION: "Asking For Deletion" #Media that users rated 0.5 stars out of 5 will be added to this collection
       CRON_SCHEDULE: "0 */1 * * *"   # every hour
       RUN_SYNC_AT_STARTUP: "true" #decide if it syncs directly or wait for cron, "true" or "false"
     volumes:
