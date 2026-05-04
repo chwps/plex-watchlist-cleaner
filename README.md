@@ -104,22 +104,22 @@ curl -X POST http://localhost:5000/run_sync
 
 ```
 ┌─────────────────────┐
-│   Interface Web      │  :5000     ┌──────────────────────────┐
-│   (OAuth PIN)        │ ◄──────────│   Plex Web               │
-│                      │            │   (authentification)      │
-├─────────────────────┤                    └───────────────────┘
+│   Interface Web     │  :5000     ┌──────────────────────────┐
+│   (OAuth PIN)       │ ◄──────────│   Plex Web               │
+│                     │            │   (authentification)     │
+├─────────────────────┤            └──────────────────────────┘
 │  Flask App          │
 │                     │         ┌──────────────────────────┐
 │  / (onboarding)     │         │                          │
 │  /login + /callback │         │   Plex Server            │
-│                     │ ◄─────► │   (Collections, Ratings)  │
+│                     │ ◄─────► │   (Collections, Ratings) │
 │  /run_sync          │         │                          │
 │  /webhook           │ ◄─────► │                          │
 ├─────────────────────┤         └──────────────────────────┘
 │                     │
 │  sync_collections   │         ┌──────────────────────────┐
 │  _once()            │ ──────► │   Discord Webhook        │
-│                     │         │   (notifications)         │
+│                     │         │   (notifications)        │
 ├─────────────────────┤         └──────────────────────────┘
 │                     │
 │  Cron (entrypoint)  │
