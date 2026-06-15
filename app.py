@@ -6,6 +6,12 @@ App combinée :
  - si l'utilisateur connecté est l'admin (ADMIN_USERNAME), on met aussi à jour /data/plex_token.json
  - routine de sync des collections (fonction sync_collections_once)
  - Logique de consensus (une note >= 1/5 annule la suppression)
+
+FIXES:
+ - Timeouts sur tous les appels API Plex (30s max)
+ - Threads webhook avec daemon=True + semaphore pour limiter les threads concurrents
+ - File descriptors properly closes avec 'with' statements
+ - Sync au démarrage dans un thread séparé pour ne pas bloquer Flask
 """
 
 import os
@@ -42,27 +48,37 @@ COLLECTIONS = [c.strip() for c in os.getenv("COLLECTIONS", "").split(",") if c.s
 WEBHOOK_COLLECTION = os.getenv("WEBHOOK_COLLECTION", "Demande de suppression")
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
+# FIX: Limite le nombre de threads webhook concurrents pour éviter l'accumulation
+WEBHOOK_THREAD_SEMAPHORE = threading.Semaphore(int(os.getenv("MAX_WEBHOOK_THREADS", "5")))
+
 # ------------------------------------------------------------------
 # UTILS
 # ------------------------------------------------------------------
 def load_json(path):
     if os.path.exists(path):
         try:
-            return json.load(open(path))
+            # FIX: Utilise 'with' pour fermer le file descriptor correctement
+            with open(path, 'r') as f:
+                return json.load(f)
         except Exception:
             logging.exception("Impossible de lire %s", path)
     return {}
 
 def save_json(path, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    json.dump(data, open(path, "w"), indent=2)
+    # FIX: Utilise 'with' pour fermer le file descriptor correctement
+    with open(path, 'w') as f:
+        json.dump(data, f, indent=2)
 
 def get_client_id():
     if os.path.exists(CLIENT_ID_FILE):
-        return open(CLIENT_ID_FILE).read().strip()
+        # FIX: Utilise 'with' pour fermer le file descriptor
+        with open(CLIENT_ID_FILE, 'r') as f:
+            return f.read().strip()
     cid = secrets.token_hex(16)
     os.makedirs(os.path.dirname(CLIENT_ID_FILE), exist_ok=True)
-    open(CLIENT_ID_FILE, "w").write(cid)
+    with open(CLIENT_ID_FILE, 'w') as f:
+        f.write(cid)
     return cid
 
 def load_user_tokens():
@@ -216,7 +232,8 @@ def sync_ratings():
     if not users: return
 
     try:
-        admin_server = PlexServer(PLEX_URL, token=admin_token)
+        # FIX: Ajoute un timeout sur la connexion PlexServer
+        admin_server = PlexServer(PLEX_URL, token=admin_token, timeout=30)
         server_name = admin_server.friendlyName
     except Exception as e:
         logging.error("Erreur connexion admin : %s", e)
@@ -235,7 +252,8 @@ def sync_ratings():
                 user_server = admin_server
             else:
                 account = MyPlexAccount(token=token)
-                user_server = account.resource(server_name).connect()
+                # FIX: Ajoute un timeout sur la connexion au resource
+                user_server = account.resource(server_name).connect(timeout=30)
 
             for section in user_server.library.sections():
                 if section.type not in {"movie", "show"}: continue
@@ -312,7 +330,8 @@ def sync_collections_once():
 
     token = get_admin_token()
     if not token: return
-    server = PlexServer(PLEX_URL, token=token)
+    # FIX: Ajoute un timeout sur la connexion PlexServer
+    server = PlexServer(PLEX_URL, token=token, timeout=30)
 
     current = set()
     for name in COLLECTIONS:
@@ -339,53 +358,66 @@ def sync_collections_once():
 def process_webhook_rating(rating_val, rating_key, title, username):
     """Vérifie le consensus en arrière-plan suite à un webhook pour ne pas bloquer Plex"""
     logging.info("Webhook reçu pour '%s' (Note: %s/10). Vérification globale...", title, rating_val)
-    
-    admin_token = get_admin_token()
-    if not admin_token: return
+
+    # FIX: Utilise le semaphore pour limiter le nombre de threads concurrents
+    if not WEBHOOK_THREAD_SEMAPHORE.acquire(timeout=5):  # FIX: Attend max 5s pour obtenir le semaphore
+        logging.warning("Trop de webhooks en attente, ignore le webhook pour '%s'", title)
+        return
+
     try:
-        admin_server = PlexServer(PLEX_URL, token=admin_token)
-        server_name = admin_server.friendlyName
-    except Exception: return
-
-    is_protected = False
-    protectors = []
-
-    # On interroge les autres utilisateurs
-    for u in list_all_users():
+        admin_token = get_admin_token()
+        if not admin_token: return
         try:
-            if u["token"] == admin_token:
-                user_server = admin_server
+            # FIX: Ajoute un timeout sur la connexion PlexServer
+            admin_server = PlexServer(PLEX_URL, token=admin_token, timeout=30)
+            server_name = admin_server.friendlyName
+        except Exception: return
+
+        is_protected = False
+        protectors = []
+
+        # On interroge les autres utilisateurs
+        for u in list_all_users():
+            try:
+                if u["token"] == admin_token:
+                    user_server = admin_server
+                else:
+                    account = MyPlexAccount(token=u["token"])
+                    # FIX: Ajoute un timeout sur la connexion au resource
+                    user_server = account.resource(server_name).connect(timeout=30)
+
+                # FIX: Ajoute un timeout sur fetchItem
+                item = user_server.fetchItem(int(rating_key), timeout=30)
+                if item.userRating is not None:
+                    r_val = float(item.userRating)
+                    if r_val >= 2.0:  # >= 1 étoile
+                        is_protected = True
+                        protectors.append(f"{u['username']} ({r_val/2}/5)")
+            except Exception:
+                pass
+
+        # Application de la décision
+        try:
+            # FIX: Ajoute un timeout sur fetchItem
+            admin_item = admin_server.fetchItem(int(rating_key), timeout=30)
+            current_collections = [c.tag for c in admin_item.collections]
+
+            if is_protected:
+                if WEBHOOK_COLLECTION in current_collections:
+                    admin_item.removeCollection(WEBHOOK_COLLECTION)
+                    send_to_discord(f"🛡️ **Maintien sur le serveur** : La suppression de **{title}** est bloquée/annulée grâce aux notes de : {', '.join(protectors)}")
+                elif rating_val == 1.0:
+                    logging.info("Webhook : %s a noté 0.5, mais '%s' est protégé par %s. Action ignorée.", username, title, protectors)
             else:
-                account = MyPlexAccount(token=u["token"])
-                user_server = account.resource(server_name).connect()
+                if rating_val == 1.0 and WEBHOOK_COLLECTION not in current_collections:
+                    admin_item.addCollection(WEBHOOK_COLLECTION)
+                    send_to_discord(f"🗑️ **Demande de suppression** via Webhook reçue par {username} pour : **{title}**")
 
-            item = user_server.fetchItem(int(rating_key))
-            if item.userRating is not None:
-                r_val = float(item.userRating)
-                if r_val >= 2.0:  # >= 1 étoile
-                    is_protected = True
-                    protectors.append(f"{u['username']} ({r_val/2}/5)")
-        except Exception:
-            pass
-
-    # Application de la décision
-    try:
-        admin_item = admin_server.fetchItem(int(rating_key))
-        current_collections = [c.tag for c in admin_item.collections]
-
-        if is_protected:
-            if WEBHOOK_COLLECTION in current_collections:
-                admin_item.removeCollection(WEBHOOK_COLLECTION)
-                send_to_discord(f"🛡️ **Maintien sur le serveur** : La suppression de **{title}** est bloquée/annulée grâce aux notes de : {', '.join(protectors)}")
-            elif rating_val == 1.0:
-                logging.info("Webhook : %s a noté 0.5, mais '%s' est protégé par %s. Action ignorée.", username, title, protectors)
-        else:
-            if rating_val == 1.0 and WEBHOOK_COLLECTION not in current_collections:
-                admin_item.addCollection(WEBHOOK_COLLECTION)
-                send_to_discord(f"🗑️ **Demande de suppression** via Webhook reçue par {username} pour : **{title}**")
-                
-    except Exception as e:
-        logging.error("Erreur Thread Webhook : %s", e)
+        except Exception as e:
+            logging.error("Erreur Thread Webhook : %s", e)
+    finally:
+        # FIX: Relache toujours le semaphore, même en cas d'erreur
+        WEBHOOK_THREAD_SEMAPHORE.release()
 
 # ------------------------------------------------------------------
 # ROUTES API
@@ -419,7 +451,14 @@ def webhook():
             
             # On lance le travail de vérification en arrière-plan (Thread)
             # pour renvoyer tout de suite "202 Accepted" à Plex et éviter un Timeout
-            threading.Thread(target=process_webhook_rating, args=(rating_val, rating_key, title, username)).start()
+            # FIX: Thread en daemon=True pour qu'il ne bloque pas l'arret du processus
+            # FIX: Utilise le semaphore pour limiter les threads concurrents
+            thread = threading.Thread(
+                target=process_webhook_rating, 
+                args=(rating_val, rating_key, title, username),
+                daemon=True  # FIX: Le thread s'arrete quand le processus s'arrete
+            )
+            thread.start()
             return "Vérification de la note en arrière-plan", 202
 
     return "Événement ignoré", 200
@@ -429,7 +468,14 @@ def webhook():
 # ------------------------------------------------------------------
 if __name__ == "__main__":
     logging.info("==== Démarrage combiné plex-watchlist-cleaner ====")
+    
+    # FIX: Lance le sync au démarrage dans un thread séparé pour ne pas bloquer Flask
     if os.getenv("RUN_SYNC_AT_STARTUP", "false").lower() in {"1", "true", "yes"}:
-        sync_collections_once()
-
+        logging.info("Lancement du sync au démarrage dans un thread séparé...")
+        sync_thread = threading.Thread(
+            target=sync_collections_once,
+            daemon=True  # S'arrête avec le processus
+        )
+        sync_thread.start()
+    
     app.run(host="0.0.0.0", port=5000, debug=False)
